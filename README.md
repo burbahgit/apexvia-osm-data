@@ -10,13 +10,13 @@ Android app, published here as required by the Open Database License.
 
 | File | What it is |
 |---|---|
-| `assets/poi/tr-poi.json` | The dataset: 36,228 places (11,985 fuel stations, 10,863 places to stay, 13,380 cafés) |
+| `assets/poi/tr-poi.json` | The dataset: 35,971 places (11,934 fuel stations, 10,720 places to stay, 13,317 cafés) |
 | `scripts/build-poi-dataset.mjs` | The script that produces the dataset |
 | `LICENSE-DATA.md` | Data licence (ODbL 1.0) |
 | `LICENSE` | Script licence (MIT) |
 
-- Generated: 2026-09-24T20:22:48.024Z
-- OpenStreetMap data as of: 2026-09-24T20:19:21Z
+- Generated: 2026-09-28T10:36:22.023Z
+- OpenStreetMap data as of: 2026-09-28T10:34:01Z
 
 ## Source
 
@@ -38,6 +38,10 @@ Three queries to the public [Overpass API](https://overpass-api.de/), each limit
   "otogaz", "autogas", "LPG") with no sign of petrol ("petrol", "akaryakıt", or a petrol brand such
   as GO, Opet, Shell, BP, Total, Aytemiz). When `fuel:*` tags exist, the name rule is not used.
 - Ways and relations are reduced to their centre point.
+- When the same place appears twice in one category with the same name (ignoring case and the
+  Turkish dotted and dotless i) and at most 40 m apart, usually as a point and as its building or
+  area, only one record is kept: the point if there is one. A missing brand or phone number is
+  taken from the removed record. Places without a name are never merged.
 - Coordinates are rounded to 5 decimal places (about 1 m).
 - Only these tags are kept: name (`name:tr`, else `name`), brand (`brand`, else `operator`; fuel
   stations only) and phone (`phone`, else `contact:phone`).
@@ -61,7 +65,8 @@ Missing values are `null`. Older files have no `osmBase`.
 
 ## Regenerating
 
-Requires Node.js 18 or newer; there are no dependencies.
+Requires Node.js 18 or newer; there are no dependencies. The script also needs
+`scripts/poi-dedupe.cjs` next to it.
 
 ```sh
 node scripts/build-poi-dataset.mjs
@@ -93,11 +98,11 @@ içinde gelen verinin birebir aynısıdır ve Açık Veritabanı Lisansı (ODbL)
 
 **İçerik**
 
-- `assets/poi/tr-poi.json`: veri dosyası. 36.228 yer (11.985 benzin istasyonu,
-  10.863 konaklama, 13.380 kafe).
+- `assets/poi/tr-poi.json`: veri dosyası. 35.971 yer (11.934 benzin istasyonu,
+  10.720 konaklama, 13.317 kafe).
 - `scripts/build-poi-dataset.mjs`: dosyayı üreten betik.
 - `LICENSE-DATA.md`: veri lisansı (ODbL 1.0). `LICENSE`: betik lisansı (MIT).
-- Üretim zamanı: 2026-09-24T20:22:48.024Z. OpenStreetMap verisinin tarihi: 2026-09-24T20:19:21Z.
+- Üretim zamanı: 2026-09-28T10:36:22.023Z. OpenStreetMap verisinin tarihi: 2026-09-28T10:34:01Z.
 
 **Kaynak ve işleme**
 
@@ -107,12 +112,16 @@ satan istasyonlar çıkarılır; motosiklet bu istasyonlarda yakıt alamaz. Yaln
 istasyon şöyle belirlenir: yakıt etiketlerinde `yes` olanlar yalnız `fuel:lpg`/`fuel:cng` ise ya
 da hiç yakıt etiketi yokken adı, markası veya işletmecisi bir otogaz markasıysa ve benzin işareti
 ("petrol", "akaryakıt", GO, Opet, Shell gibi bir akaryakıt markası) taşımıyorsa. Koordinatlar
-virgülden sonra 5 basamağa (yaklaşık 1 m) yuvarlanır. Yalnız ad, marka (yalnız benzin istasyonları)
+virgülden sonra 5 basamağa (yaklaşık 1 m) yuvarlanır. Aynı kategoride, aynı adla (büyük/küçük harf
+ve noktalı/noktasız i farkı gözetilmeden) ve en fazla 40 m arayla iki kez geçen yerler (çoğunlukla
+bir nokta ve onun binası ya da alanı) teke indirilir; varsa nokta kaydı tutulur, eksik marka veya
+telefon silinen kayıttan alınır. Adsız yerler birleştirilmez. Yalnız ad, marka (yalnız benzin istasyonları)
 ve telefon tutulur.
 
 **Yeniden üretme**
 
-Node.js 18 veya üstü yeterlidir, bağımlılık yoktur: `node scripts/build-poi-dataset.mjs`. Betik
+Node.js 18 veya üstü yeterlidir, bağımlılık yoktur: `node scripts/build-poi-dataset.mjs`
+(`scripts/poi-dedupe.cjs` aynı klasörde olmalı). Betik
 `assets/poi/tr-poi.json` dosyasının üzerine yazar. Bir kategori beklenenden çok az yerle dönerse
 dosyayı yazmaz.
 

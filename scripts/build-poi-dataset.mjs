@@ -8,9 +8,12 @@
 // Veri © OpenStreetMap katkıda bulunanlar, ODbL lisansıyla — uygulamada atıf
 // gösterilmesi zorunlu.
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+const { dedupePoiRows } = createRequire(import.meta.url)('./poi-dedupe.cjs');
 
 const OUTPUT = resolve(dirname(fileURLToPath(import.meta.url)), '../assets/poi/tr-poi.json');
 
@@ -42,6 +45,20 @@ const CATEGORIES = [
 
 const OSM_TYPE_PREFIX = { node: 'n', way: 'w', relation: 'r' };
 
+// Yedek sunucular ana sunucudan aylarca geride olabilir: private.coffee 28
+// Eylül 2026'da 1 Haziran verisi döndürdü ve betik bunu kabul edip dosyayı
+// eskitiyordu. Mevcut dosyadan eski (ya da tarihsiz) yanıt başarısız deneme
+// sayılır; yenileme veriyi hiçbir zaman geriye götürmez.
+function readPreviousOsmBase() {
+  if (!existsSync(OUTPUT)) return null;
+  try {
+    return JSON.parse(readFileSync(OUTPUT, 'utf8')).osmBase ?? null;
+  } catch {
+    return null;
+  }
+}
+const PREVIOUS_OSM_BASE = readPreviousOsmBase();
+
 function buildQuery(selector) {
   return `[out:json][timeout:300];
 area["ISO3166-1"="TR"][admin_level=2]->.tr;
@@ -58,20 +75,31 @@ async function fetchCategory(category) {
         const response = await fetch(endpoint, {
           method: 'POST',
           body,
-          headers: { 'User-Agent': 'apexvia-osm-data (burak.bahali@gmail.com)' },
+          headers: { 'User-Agent': 'apexvia-osm-data (bhldev.app@gmail.com)' },
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          const error = new Error(`HTTP ${response.status}`);
+          error.rateLimited = response.status === 429;
+          throw error;
+        }
         const data = await response.json();
         if (!Array.isArray(data.elements)) throw new Error('elements yok');
         if (data.elements.length < category.minCount) {
           throw new Error(`yalnız ${data.elements.length} eleman (en az ${category.minCount})`);
         }
-        console.log(`${category.name}: ${data.elements.length} eleman (${endpoint})`);
-        return { elements: data.elements, osmBase: data.osm3s?.timestamp_osm_base ?? null };
+        const osmBase = data.osm3s?.timestamp_osm_base ?? null;
+        if (PREVIOUS_OSM_BASE && (!osmBase || osmBase < PREVIOUS_OSM_BASE)) {
+          throw new Error(`veri eski (${osmBase ?? 'tarih yok'}; mevcut dosya ${PREVIOUS_OSM_BASE})`);
+        }
+        console.log(`${category.name}: ${data.elements.length} eleman, OSM ${osmBase} (${endpoint})`);
+        return { elements: data.elements, osmBase };
       } catch (error) {
         lastError = error;
         console.warn(`${category.name}: ${endpoint} deneme ${attempt} başarısız — ${error.message}`);
-        await new Promise((r) => setTimeout(r, 5000 * attempt));
+        // 429: önceki ağır sorgu sunucudaki sıra hakkını bir süre tutuyor
+        // (28 Eylül 2026: üçüncü kategori 5–15 sn aralıkla üç kez 429 aldı).
+        const waitMs = error.rateLimited ? 60000 * attempt : 5000 * attempt;
+        await new Promise((r) => setTimeout(r, waitMs));
       }
     }
   }
@@ -145,14 +173,21 @@ for (const category of CATEGORIES) {
   rows.push(...categoryRows);
 }
 
+// T-119: aynı yerin nokta + bina kayıtları (haritada çift pin) teke indirilir.
+const { rows: places, merged } = dedupePoiRows(rows);
+const codeToName = Object.fromEntries(CATEGORIES.map((category) => [category.code, category.name]));
+for (const name of Object.keys(counts)) counts[name] = 0;
+for (const row of places) counts[codeToName[row[1]]] += 1;
+console.log(`Çift kayıt birleştirildi: ${merged.length}`);
+
 const dataset = {
   generatedAt: new Date().toISOString(),
   osmBase: osmBases.sort()[0] ?? null,
   attribution: '© OpenStreetMap contributors, ODbL',
   counts,
-  places: rows,
+  places,
 };
 
 mkdirSync(dirname(OUTPUT), { recursive: true });
 writeFileSync(OUTPUT, JSON.stringify(dataset));
-console.log(`Yazıldı: ${OUTPUT} — ${rows.length} yer`, counts);
+console.log(`Yazıldı: ${OUTPUT} — ${places.length} yer`, counts);
