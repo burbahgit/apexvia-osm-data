@@ -1,8 +1,8 @@
-# Apexvia OSM data — Turkey points of interest
+# Apexvia OSM data — Turkey points of interest and road grid
 
-Fuel stations, lodging and cafés in Turkey, extracted from
-[OpenStreetMap](https://www.openstreetmap.org/). This is the exact dataset bundled in the Apexvia
-Android app, published here as required by the Open Database License.
+Fuel stations, lodging and cafés in Turkey, and a road-class grid with mountain passes, extracted
+from [OpenStreetMap](https://www.openstreetmap.org/). These are the exact datasets bundled in the
+Apexvia Android app, published here as required by the Open Database License.
 
 [Türkçe açıklama aşağıda.](#türkçe)
 
@@ -12,6 +12,8 @@ Android app, published here as required by the Open Database License.
 |---|---|
 | `assets/poi/tr-poi.json` | The dataset: 35,971 places (11,934 fuel stations, 10,720 places to stay, 13,317 cafés) |
 | `scripts/build-poi-dataset.mjs` | The script that produces the dataset |
+| `assets/roads/tr-roads.json` | Road grid: 1,708,634 cells of about 250 m with road class and poor surface, and 237 mountain passes (OSM data as of 2026-09-28T20:23:05Z) |
+| `scripts/roads/build_road_grid.py` | The script that produces the road grid |
 | `LICENSE-DATA.md` | Data licence (ODbL 1.0) |
 | `LICENSE` | Script licence (MIT) |
 
@@ -76,6 +78,25 @@ The script overwrites `assets/poi/tr-poi.json`. It tries several public Overpass
 and refuses to write a file if a category comes back with far fewer places than expected (a
 server that does not know the Turkey area answers with an empty list).
 
+## Road grid
+
+Source: the Geofabrik extract of Turkey (`turkey-latest.osm.pbf`, MD5-checked), processed with
+[pyosmium](https://osmcode.org/pyosmium/).
+
+- Roads tagged `highway=motorway|trunk|primary|secondary|tertiary|unclassified` (and their
+  `_link` variants) are drawn onto a grid of 0.00225° latitude × 0.003° longitude (about 250 m).
+- Each cell holds 6 bits: which classes pass through it (bit 0 motorway, 1 trunk, 2 primary,
+  3 secondary, 4 tertiary/unclassified) and whether any of those roads has a poor surface
+  (bit 5: `surface` or `smoothness` in unpaved, gravel, fine_gravel, dirt, ground, earth, mud, sand,
+  compacted, bad, very_bad, horrible, very_horrible, impassable).
+- `passes` lists nodes tagged `mountain_pass=yes` as `[latitude, longitude]` (5 decimals).
+- `grid` is base64: rows in increasing latitude; each row is `varint(latitude index − previous)`,
+  `varint(cell count)`, then for each cell `varint((longitude index − previous) × 64 + value)` (the
+  first cell of a row stores its longitude index itself). Indices are `floor(coordinate / cell size)`.
+
+Regenerate with Python 3.10+ and `pip install osmium`: `python scripts/roads/build_road_grid.py`
+(downloads the extract, about 650 MB, into `.cache/osm/`).
+
 ## Licence
 
 **Data:** © OpenStreetMap contributors. The dataset is made available under the
@@ -101,6 +122,9 @@ içinde gelen verinin birebir aynısıdır ve Açık Veritabanı Lisansı (ODbL)
 - `assets/poi/tr-poi.json`: veri dosyası. 35.971 yer (11.934 benzin istasyonu,
   10.720 konaklama, 13.317 kafe).
 - `scripts/build-poi-dataset.mjs`: dosyayı üreten betik.
+- `assets/roads/tr-roads.json`: yol ızgarası. Yaklaşık 250 m'lik 1.708.634 hücrede yol sınıfı ve
+  kötü yüzey, ayrıca 237 dağ geçidi (OpenStreetMap verisinin tarihi: 2026-09-28T20:23:05Z).
+- `scripts/roads/build_road_grid.py`: ızgarayı üreten betik.
 - `LICENSE-DATA.md`: veri lisansı (ODbL 1.0). `LICENSE`: betik lisansı (MIT).
 - Üretim zamanı: 2026-09-28T10:36:22.023Z. OpenStreetMap verisinin tarihi: 2026-09-28T10:34:01Z.
 
@@ -124,6 +148,17 @@ Node.js 18 veya üstü yeterlidir, bağımlılık yoktur: `node scripts/build-po
 (`scripts/poi-dedupe.cjs` aynı klasörde olmalı). Betik
 `assets/poi/tr-poi.json` dosyasının üzerine yazar. Bir kategori beklenenden çok az yerle dönerse
 dosyayı yazmaz.
+
+**Yol ızgarası**
+
+Kaynak: Geofabrik'in Türkiye özeti (`turkey-latest.osm.pbf`, MD5 doğrulanır), pyosmium ile işlenir.
+`highway=motorway|trunk|primary|secondary|tertiary|unclassified` (ve `_link` türleri) etiketli yollar
+0,00225° enlem × 0,003° boylamlık (yaklaşık 250 m) ızgaraya işlenir. Her hücrede 6 bit bulunur:
+hücreden geçen yol sınıfları (bit 0 otoyol, 1 trunk, 2 primary, 3 secondary, 4 tertiary/unclassified)
+ve bu yollardan birinin yüzeyinin kötü olup olmadığı (bit 5). `passes`, `mountain_pass=yes` etiketli
+noktaları `[enlem, boylam]` olarak listeler. Kodlama İngilizce bölümde. Yeniden üretmek için Python
+3.10+ ve `pip install osmium`: `python scripts/roads/build_road_grid.py` (kaynak dosyayı, yaklaşık
+650 MB, `.cache/osm/` altına indirir).
 
 **Lisans**
 
