@@ -12,7 +12,7 @@ Apexvia Android app, published here as required by the Open Database License.
 |---|---|
 | `assets/poi/tr-poi.json` | The dataset: 35,971 places (11,934 fuel stations, 10,720 places to stay, 13,317 cafés) |
 | `scripts/build-poi-dataset.mjs` | The script that produces the dataset |
-| `assets/roads/tr-roads.json` | Road grid: 1,708,634 cells of about 250 m with road class and poor surface, and 237 mountain passes (OSM data as of 2026-09-28T20:23:05Z) |
+| `assets/roads/tr-roads.json` | Road grid: 1,708,634 cells of about 250 m with road class and poor surface, 132,688 built-up cells, and 237 mountain passes (OSM data as of 2026-09-28T20:23:05Z) |
 | `scripts/roads/build_road_grid.py` | The script that produces the road grid |
 | `LICENSE-DATA.md` | Data licence (ODbL 1.0) |
 | `LICENSE` | Script licence (MIT) |
@@ -93,6 +93,11 @@ Source: the Geofabrik extract of Turkey (`turkey-latest.osm.pbf`, MD5-checked), 
 - `grid` is base64: rows in increasing latitude; each row is `varint(latitude index − previous)`,
   `varint(cell count)`, then for each cell `varint((longitude index − previous) × 64 + value)` (the
   first cell of a row stores its longitude index itself). Indices are `floor(coordinate / cell size)`.
+- `urban` lists built-up cells in the same row layout, without a value (each cell is
+  `varint(longitude index − previous)`). A cell is built-up when a junction road passes through it
+  (`highway=*_link` or `junction=roundabout|circular`) or when it holds at least 750 m of
+  `highway=residential|living_street` (each segment counted in the cell of its midpoint). The app
+  does not count bends in these cells as curves (ramps, roundabouts and street corners).
 
 Regenerate with Python 3.10+ and `pip install osmium`: `python scripts/roads/build_road_grid.py`
 (downloads the extract, about 650 MB, into `.cache/osm/`).
@@ -123,7 +128,8 @@ içinde gelen verinin birebir aynısıdır ve Açık Veritabanı Lisansı (ODbL)
   10.720 konaklama, 13.317 kafe).
 - `scripts/build-poi-dataset.mjs`: dosyayı üreten betik.
 - `assets/roads/tr-roads.json`: yol ızgarası. Yaklaşık 250 m'lik 1.708.634 hücrede yol sınıfı ve
-  kötü yüzey, ayrıca 237 dağ geçidi (OpenStreetMap verisinin tarihi: 2026-09-28T20:23:05Z).
+  kötü yüzey, 132.688 yerleşim hücresi, ayrıca 237 dağ geçidi (OpenStreetMap
+  verisinin tarihi: 2026-09-28T20:23:05Z).
 - `scripts/roads/build_road_grid.py`: ızgarayı üreten betik.
 - `LICENSE-DATA.md`: veri lisansı (ODbL 1.0). `LICENSE`: betik lisansı (MIT).
 - Üretim zamanı: 2026-09-28T10:36:22.023Z. OpenStreetMap verisinin tarihi: 2026-09-28T10:34:01Z.
@@ -156,7 +162,10 @@ Kaynak: Geofabrik'in Türkiye özeti (`turkey-latest.osm.pbf`, MD5 doğrulanır)
 0,00225° enlem × 0,003° boylamlık (yaklaşık 250 m) ızgaraya işlenir. Her hücrede 6 bit bulunur:
 hücreden geçen yol sınıfları (bit 0 otoyol, 1 trunk, 2 primary, 3 secondary, 4 tertiary/unclassified)
 ve bu yollardan birinin yüzeyinin kötü olup olmadığı (bit 5). `passes`, `mountain_pass=yes` etiketli
-noktaları `[enlem, boylam]` olarak listeler. Kodlama İngilizce bölümde. Yeniden üretmek için Python
+noktaları `[enlem, boylam]` olarak listeler. `urban`, yerleşim hücrelerini listeler: hücreden kavşak
+bağlantı yolu (`highway=*_link`) ya da göbek (`junction=roundabout|circular`) geçiyorsa ya da hücrede
+en az 750 m `highway=residential|living_street` varsa (her bölüm orta noktasının hücresine sayılır).
+Uygulama bu hücrelerdeki dönüşleri viraj saymaz (rampa, göbek, sokak köşesi). Kodlama İngilizce bölümde. Yeniden üretmek için Python
 3.10+ ve `pip install osmium`: `python scripts/roads/build_road_grid.py` (kaynak dosyayı, yaklaşık
 650 MB, `.cache/osm/` altına indirir).
 
