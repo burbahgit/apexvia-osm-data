@@ -21,6 +21,10 @@ konut sokağı (`residential`, `living_street`) varsa şehir içidir; bu hücrel
 viraj ölçüsüne girmez (rampa, göbek ve sokak dönüşü gerçek viraj değildir). Ayrı liste,
 ızgaraya yedinci bit eklemekten küçük: 7 bitlik değer her hücreyi 2 bayta itiyordu
 (dosya 3,3 → 4,7 MB).
+
+`towns` (T-161): şehir ve kasaba noktaları (`place=city/town`), [enlem, boylam, ad]. Bozuk yol
+bölümü "Akseki yakınında" diye adlandırılır; köyler (~35.000) dosyayı ~1,5 MB büyüteceği ve çoğu
+sürücüye tanıdık gelmeyeceği için alınmaz (Burak, 30 Ekim 2026).
 """
 import base64
 import hashlib
@@ -63,6 +67,8 @@ BAD_VALUES = {
 # 1,71 milyon hücre); daha azı bozuk/eksik bir kaynak dosyası demektir.
 MIN_CELLS = 1_200_000
 MIN_PASSES = 100
+MIN_TOWNS = 500
+TOWN_PLACES = {'city', 'town'}
 
 
 def download_pbf() -> Path:
@@ -180,6 +186,17 @@ def mountain_passes(pbf: Path) -> list[list[float]]:
     return [list(point) for point in sorted(found)]
 
 
+def towns(pbf: Path) -> list[list]:
+    # Süzme C++ tarafında: Python'a yalnız `place` etiketli noktalar gelir.
+    processor = osmium.FileProcessor(str(pbf), osmium.osm.NODE).with_filter(osmium.filter.KeyFilter('place'))
+    found = {
+        (round(node.location.lat, 4), round(node.location.lon, 4), node.tags.get('name').strip())
+        for node in processor
+        if node.tags.get('place') in TOWN_PLACES and node.tags.get('name') and node.location.valid()
+    }
+    return [list(town) for town in sorted(found)]
+
+
 def varint(n: int, out: bytearray) -> None:
     while True:
         byte = n & 0x7F
@@ -241,8 +258,9 @@ def main() -> None:
     collector.apply_file(str(pbf), locations=True, idx='sparse_mem_array')
     urban_cells = collector.urban_cells()
     passes = mountain_passes(pbf)
-    if len(collector.cells) < MIN_CELLS or len(passes) < MIN_PASSES:
-        sys.exit(f'Beklenenden az veri: {len(collector.cells)} hücre, {len(passes)} geçit.')
+    town_list = towns(pbf)
+    if len(collector.cells) < MIN_CELLS or len(passes) < MIN_PASSES or len(town_list) < MIN_TOWNS:
+        sys.exit(f'Beklenenden az veri: {len(collector.cells)} hücre, {len(passes)} geçit, {len(town_list)} kasaba.')
 
     grid = encode(collector.cells)
     dataset = {
@@ -257,8 +275,10 @@ def main() -> None:
             'badCells': sum(1 for v in collector.cells.values() if v & (1 << BAD_BIT)),
             'urbanCells': len(urban_cells),
             'passes': len(passes),
+            'towns': len(town_list),
         },
         'passes': passes,
+        'towns': town_list,
         'grid': base64.b64encode(grid).decode('ascii'),
         'urban': base64.b64encode(encode_keys(urban_cells)).decode('ascii'),
     }

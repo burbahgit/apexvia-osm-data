@@ -10,15 +10,15 @@ Apexvia Android app, published here as required by the Open Database License.
 
 | File | What it is |
 |---|---|
-| `assets/poi/tr-poi.json` | The dataset: 35,971 places (11,934 fuel stations, 10,720 places to stay, 13,317 cafés) |
+| `assets/poi/tr-poi.json` | The dataset: 36,316 places (11,937 fuel stations, 10,839 places to stay, 13,540 cafés) |
 | `scripts/build-poi-dataset.mjs` | The script that produces the dataset |
-| `assets/roads/tr-roads.json` | Road grid: 1,708,634 cells of about 250 m with road class and poor surface, 132,688 built-up cells, and 237 mountain passes (OSM data as of 2026-09-28T20:23:05Z) |
+| `assets/roads/tr-roads.json` | Road grid: 1,709,151 cells of about 250 m with road class and poor surface, 133,060 built-up cells, and 237 mountain passes (OSM data as of 2026-11-01T21:21:36Z) |
 | `scripts/roads/build_road_grid.py` | The script that produces the road grid |
 | `LICENSE-DATA.md` | Data licence (ODbL 1.0) |
 | `LICENSE` | Script licence (MIT) |
 
-- Generated: 2026-09-28T10:36:22.023Z
-- OpenStreetMap data as of: 2026-09-28T10:34:01Z
+- Generated: 2026-11-02T08:12:11.761Z
+- OpenStreetMap data as of: 2026-11-02T08:08:43Z
 
 ## Source
 
@@ -124,15 +124,15 @@ içinde gelen verinin birebir aynısıdır ve Açık Veritabanı Lisansı (ODbL)
 
 **İçerik**
 
-- `assets/poi/tr-poi.json`: veri dosyası. 35.971 yer (11.934 benzin istasyonu,
-  10.720 konaklama, 13.317 kafe).
+- `assets/poi/tr-poi.json`: veri dosyası. 36.316 yer (11.937 benzin istasyonu,
+  10.839 konaklama, 13.540 kafe).
 - `scripts/build-poi-dataset.mjs`: dosyayı üreten betik.
-- `assets/roads/tr-roads.json`: yol ızgarası. Yaklaşık 250 m'lik 1.708.634 hücrede yol sınıfı ve
-  kötü yüzey, 132.688 yerleşim hücresi, ayrıca 237 dağ geçidi (OpenStreetMap
-  verisinin tarihi: 2026-09-28T20:23:05Z).
+- `assets/roads/tr-roads.json`: yol ızgarası. Yaklaşık 250 m'lik 1.709.151 hücrede yol sınıfı ve
+  kötü yüzey, 133.060 yerleşim hücresi, ayrıca 237 dağ geçidi (OpenStreetMap
+  verisinin tarihi: 2026-11-01T21:21:36Z).
 - `scripts/roads/build_road_grid.py`: ızgarayı üreten betik.
 - `LICENSE-DATA.md`: veri lisansı (ODbL 1.0). `LICENSE`: betik lisansı (MIT).
-- Üretim zamanı: 2026-09-28T10:36:22.023Z. OpenStreetMap verisinin tarihi: 2026-09-28T10:34:01Z.
+- Üretim zamanı: 2026-11-02T08:12:11.761Z. OpenStreetMap verisinin tarihi: 2026-11-02T08:08:43Z.
 
 **Kaynak ve işleme**
 
