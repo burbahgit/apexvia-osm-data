@@ -9,6 +9,10 @@ Veri © OpenStreetMap katkıda bulunanlar, ODbL.
 Izgara: hücre 0,00225° (enlem) × 0,003° (boylam) ≈ 250 m. Hücre değeri 6 bit:
 bit0 motorway, bit1 trunk, bit2 primary, bit3 secondary,
 bit4 tertiary/unclassified (hücreden geçen sınıflar), bit5 kötü yüzey.
+
+Kötü yüzey (T-167, tasarım §179): bit yalnız hücredeki EN YÜKSEK sınıftaki yol kötü etiketliyse konur. Önce
+hücreden geçen herhangi bir sınıflı yolun etiketinden konuyordu; D300 (trunk, asfalt) yanından paralel geçen toprak
+`unclassified` yollar yüzünden 5,5 km "bozuk" görünüyordu.
 Kodlama (ikili, base64 olarak JSON'da): satırlar enleme göre artan; satır
 başlığı varint(enlem indeksi farkı), varint(hücre sayısı); hücre
 varint((boylam indeksi farkı << 6) | değer) — satırın ilk hücresinde fark,
@@ -129,6 +133,8 @@ class Collector(osmium.SimpleHandler):
     def __init__(self):
         super().__init__()
         self.cells: dict[tuple[int, int], int] = {}
+        # T-167: hücrede kötü etiketli yolların sınıf bitleri; bit 5 `final_cells`te en yüksek sınıfa göre konur.
+        self.bad_classes: dict[tuple[int, int], int] = {}
         self.ways = 0
         self.junction_cells: set[tuple[int, int]] = set()
         self.residential: dict[tuple[int, int], float] = {}
@@ -147,8 +153,7 @@ class Collector(osmium.SimpleHandler):
         if bit is None:
             return
         value = 1 << bit
-        if w.tags.get('surface') in BAD_VALUES or w.tags.get('smoothness') in BAD_VALUES:
-            value |= 1 << BAD_BIT
+        bad = w.tags.get('surface') in BAD_VALUES or w.tags.get('smoothness') in BAD_VALUES
         try:
             points = [(node.lat, node.lon) for node in w.nodes]
         except osmium.InvalidLocationError:
@@ -156,6 +161,18 @@ class Collector(osmium.SimpleHandler):
         self.ways += 1
         cells = self.cells
         cells_along(points, lambda key: cells.__setitem__(key, cells.get(key, 0) | value))
+        if bad:
+            bad_classes = self.bad_classes
+            cells_along(points, lambda key: bad_classes.__setitem__(key, bad_classes.get(key, 0) | value))
+
+    def final_cells(self) -> dict[tuple[int, int], int]:
+        """Hücre değerleri; kötü yüzey biti yalnız en yüksek sınıf (en küçük bit) kötü etiketliyse (T-167)."""
+        out = dict(self.cells)
+        for key, bad in self.bad_classes.items():
+            classes = out[key]
+            if bad & (classes & -classes):
+                out[key] = classes | (1 << BAD_BIT)
+        return out
 
     def add_residential(self, w) -> None:
         try:
@@ -262,7 +279,8 @@ def main() -> None:
     if len(collector.cells) < MIN_CELLS or len(passes) < MIN_PASSES or len(town_list) < MIN_TOWNS:
         sys.exit(f'Beklenenden az veri: {len(collector.cells)} hücre, {len(passes)} geçit, {len(town_list)} kasaba.')
 
-    grid = encode(collector.cells)
+    cells = collector.final_cells()
+    grid = encode(cells)
     dataset = {
         'format': 1,
         'generatedAt': datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z'),
@@ -272,7 +290,7 @@ def main() -> None:
         'counts': {
             'ways': collector.ways,
             'cells': len(collector.cells),
-            'badCells': sum(1 for v in collector.cells.values() if v & (1 << BAD_BIT)),
+            'badCells': sum(1 for v in cells.values() if v & (1 << BAD_BIT)),
             'urbanCells': len(urban_cells),
             'passes': len(passes),
             'towns': len(town_list),
