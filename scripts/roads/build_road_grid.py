@@ -190,17 +190,30 @@ class Collector(osmium.SimpleHandler):
         return urban
 
 
-def mountain_passes(pbf: Path) -> list[list[float]]:
-    # Süzme C++ tarafında: Python'a yalnız `mountain_pass` etiketli noktalar gelir.
+def _ele(value: str | None) -> float | None:
+    # OSM `ele` serbest metin ("2994", "2994 m", "2.994"); yalnız sayıyı al, anlamsızsa None.
+    if not value:
+        return None
+    digits = ''.join(ch for ch in value.replace(',', '.').split()[0] if ch.isdigit() or ch == '.')
+    try:
+        number = float(digits)
+    except ValueError:
+        return None
+    return round(number) if 0 < number < 9000 else None
+
+
+def mountain_passes(pbf: Path) -> list[list]:
+    # T-312: [enlem, boylam, yükseklik|None, ad|None]. Süzme C++ tarafında: yalnız `mountain_pass` etiketli noktalar.
     processor = osmium.FileProcessor(str(pbf), osmium.osm.NODE).with_filter(
         osmium.filter.KeyFilter('mountain_pass')
     )
-    found = {
-        (round(node.location.lat, 5), round(node.location.lon, 5))
-        for node in processor
-        if node.tags.get('mountain_pass') == 'yes' and node.location.valid()
-    }
-    return [list(point) for point in sorted(found)]
+    found: dict[tuple[float, float], list] = {}
+    for node in processor:
+        if node.tags.get('mountain_pass') != 'yes' or not node.location.valid():
+            continue
+        key = (round(node.location.lat, 5), round(node.location.lon, 5))
+        found[key] = [key[0], key[1], _ele(node.tags.get('ele')), node.tags.get('name') or None]
+    return [found[key] for key in sorted(found)]
 
 
 def towns(pbf: Path) -> list[list]:
