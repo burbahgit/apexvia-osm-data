@@ -29,6 +29,10 @@ viraj ölçüsüne girmez (rampa, göbek ve sokak dönüşü gerçek viraj deği
 `towns` (T-161): şehir ve kasaba noktaları (`place=city/town`), [enlem, boylam, ad]. Bozuk yol
 bölümü "Akseki yakınında" diye adlandırılır; köyler (~35.000) dosyayı ~1,5 MB büyüteceği ve çoğu
 sürücüye tanıdık gelmeyeceği için alınmaz (Burak, 30 Ekim 2026).
+
+`coast` (T-316 U-3, Burak 11 Kasım 2026): sahil hücreleri, `urban` ile aynı değersiz satır düzeninde. Kıyı çizgisine
+(`natural=coastline`, yalnız deniz; göller K-5 gereği v1'de yok) `COAST_METERS` içinde olan VE sınıflı yol geçen hücreler.
+Sahil Yolları tarzının kıyı payı bundan okunur (`osm_sinyaller.py` prototipiyle aynı kural, §2.3).
 """
 import base64
 import hashlib
@@ -72,6 +76,8 @@ BAD_VALUES = {
 MIN_CELLS = 1_200_000
 MIN_PASSES = 100
 MIN_TOWNS = 500
+MIN_COAST_CELLS = 20_000
+COAST_METERS = 1000
 TOWN_PLACES = {'city', 'town'}
 
 
@@ -138,8 +144,13 @@ class Collector(osmium.SimpleHandler):
         self.ways = 0
         self.junction_cells: set[tuple[int, int]] = set()
         self.residential: dict[tuple[int, int], float] = {}
+        # T-316 U-3: kıyı çizgisi noktaları, ~100 m'de bir (hücre 250 m).
+        self.coast_points: list[tuple[float, float]] = []
 
     def way(self, w):
+        if w.tags.get('natural') == 'coastline':
+            self.add_coast(w)
+            return
         highway = w.tags.get('highway')
         if highway in URBAN_KINDS:
             self.add_residential(w)
@@ -184,6 +195,38 @@ class Collector(osmium.SimpleHandler):
             key = (math.floor((a[0] + b[0]) / 2 / DLAT), math.floor((a[1] + b[1]) / 2 / DLON))
             self.residential[key] = self.residential.get(key, 0.0) + haversine(a, b)
 
+    def add_coast(self, w) -> None:
+        try:
+            points = [(node.lat, node.lon) for node in w.nodes]
+        except osmium.InvalidLocationError:
+            return
+        for a, b in zip(points, points[1:]):
+            steps = max(1, int(haversine(a, b) / 100))
+            for i in range(steps):
+                t = i / steps
+                self.coast_points.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+        if points:
+            self.coast_points.append(points[-1])
+
+    def coast_cells(self, radius: float = COAST_METERS) -> set[tuple[int, int]]:
+        """Kıyı çizgisine `radius` içinde olan ve sınıflı yol geçen hücreler (merkezden ölçülür)."""
+        cells: set[tuple[int, int]] = set()
+        roads = self.cells
+        ky = 110540.0
+        for la, lo in self.coast_points:
+            kx = 111320.0 * math.cos(math.radians(la))
+            di = int(radius / (DLAT * ky)) + 1
+            dj = int(radius / (DLON * kx)) + 1
+            ci, cj = math.floor(la / DLAT), math.floor(lo / DLON)
+            for i in range(-di, di + 1):
+                for j in range(-dj, dj + 1):
+                    key = (ci + i, cj + j)
+                    if key in cells or key not in roads:
+                        continue
+                    if math.hypot(((cj + j + 0.5) * DLON - lo) * kx, ((ci + i + 0.5) * DLAT - la) * ky) <= radius:
+                        cells.add(key)
+        return cells
+
     def urban_cells(self) -> set[tuple[int, int]]:
         urban = set(self.junction_cells)
         urban.update(key for key, meters in self.residential.items() if meters >= URBAN_RESIDENTIAL_METERS)
@@ -191,10 +234,15 @@ class Collector(osmium.SimpleHandler):
 
 
 def _ele(value: str | None) -> float | None:
-    # OSM `ele` serbest metin ("2994", "2994 m", "2.994"); yalnız sayıyı al, anlamsızsa None.
-    if not value:
+    # OSM `ele` serbest metin ("2994", "2994 m", "2.994", "2,994"); yalnız sayıyı al, anlamsızsa None.
+    # CR-2 (1.4.5): "2.994" ve "2,994" binlik ayırıcıdır (3 m değil); yalnız boşluk olan değer çökertmesin.
+    parts = (value or '').split()
+    if not parts:
         return None
-    digits = ''.join(ch for ch in value.replace(',', '.').split()[0] if ch.isdigit() or ch == '.')
+    token = parts[0]
+    if len(token) in (5, 6) and token[-4] in '.,' and token.replace('.', '').replace(',', '').isdigit():
+        token = token.replace('.', '').replace(',', '')
+    digits = ''.join(ch for ch in token.replace(',', '.') if ch.isdigit() or ch == '.')
     try:
         number = float(digits)
     except ValueError:
@@ -213,7 +261,62 @@ def mountain_passes(pbf: Path) -> list[list]:
             continue
         key = (round(node.location.lat, 5), round(node.location.lon, 5))
         found[key] = [key[0], key[1], _ele(node.tags.get('ele')), node.tags.get('name') or None]
-    return [found[key] for key in sorted(found)]
+    passes = [found[key] for key in sorted(found)]
+    fill_missing_elevation(passes)
+    return passes
+
+
+SRTM = ROOT / '.cache/graphhopper/srtm'
+SRTM_SIZE = 1201
+SRTM_VOID = -32768
+
+
+def srtm_at(lat: float, lon: float, tiles: dict) -> float | None:
+    """SRTM3 (~90 m) yüksekliği, dört komşu örnekten çift doğrusal; karo ya da değer yoksa None."""
+    import struct
+    import zipfile
+    base_lat, base_lon = math.floor(lat), math.floor(lon)
+    key = (base_lat, base_lon)
+    if key not in tiles:
+        name = f"{'N' if base_lat >= 0 else 'S'}{abs(base_lat):02d}{'E' if base_lon >= 0 else 'W'}{abs(base_lon):03d}.hgt"
+        path = SRTM / (name + '.zip')
+        tiles[key] = None
+        if path.exists():
+            with zipfile.ZipFile(path) as archive:
+                tiles[key] = archive.read(archive.namelist()[0])
+    tile = tiles[key]
+    if tile is None:
+        return None
+    x = (lon - base_lon) * (SRTM_SIZE - 1)
+    y = (base_lat + 1 - lat) * (SRTM_SIZE - 1)
+    x0, y0 = min(int(x), SRTM_SIZE - 2), min(int(y), SRTM_SIZE - 2)
+    fx, fy = x - x0, y - y0
+    values = []
+    for row, col in ((y0, x0), (y0, x0 + 1), (y0 + 1, x0), (y0 + 1, x0 + 1)):
+        (value,) = struct.unpack_from('>h', tile, 2 * (row * SRTM_SIZE + col))
+        if value == SRTM_VOID:
+            return None
+        values.append(value)
+    top = values[0] + (values[1] - values[0]) * fx
+    bottom = values[2] + (values[3] - values[2]) * fx
+    return top + (bottom - top) * fy
+
+
+def fill_missing_elevation(passes: list[list]) -> None:
+    """T-327 / D-35 (Burak, 11 Kasım 2026): OSM'de `ele`'si olmayan geçide SRTM3 yüksekliği; beşinci alan 'srtm' (kaynak).
+    SRTM kamu malıdır (NASA/USGS). Karo yoksa (GraphHopper önbelleği eksik) geçit eskisi gibi yüksekliksiz kalır."""
+    tiles: dict = {}
+    filled = 0
+    for entry in passes:
+        if entry[2] is not None:
+            continue
+        value = srtm_at(entry[0], entry[1], tiles)
+        if value is not None and 0 < value < 9000:
+            entry[2] = round(value)
+            entry.append('srtm')
+            filled += 1
+    missing = sum(1 for entry in passes if entry[2] is None)
+    print(f'Geçit yüksekliği: {filled} geçide SRTM, {missing} geçit yüksekliksiz')
 
 
 def towns(pbf: Path) -> list[list]:
@@ -287,10 +390,13 @@ def main() -> None:
     collector = Collector()
     collector.apply_file(str(pbf), locations=True, idx='sparse_mem_array')
     urban_cells = collector.urban_cells()
+    coast_cells = collector.coast_cells()
     passes = mountain_passes(pbf)
     town_list = towns(pbf)
-    if len(collector.cells) < MIN_CELLS or len(passes) < MIN_PASSES or len(town_list) < MIN_TOWNS:
-        sys.exit(f'Beklenenden az veri: {len(collector.cells)} hücre, {len(passes)} geçit, {len(town_list)} kasaba.')
+    if (len(collector.cells) < MIN_CELLS or len(passes) < MIN_PASSES or len(town_list) < MIN_TOWNS
+            or len(coast_cells) < MIN_COAST_CELLS):
+        sys.exit(f'Beklenenden az veri: {len(collector.cells)} hücre, {len(passes)} geçit, {len(town_list)} kasaba, '
+                 f'{len(coast_cells)} sahil hücresi.')
 
     cells = collector.final_cells()
     grid = encode(cells)
@@ -305,6 +411,7 @@ def main() -> None:
             'cells': len(collector.cells),
             'badCells': sum(1 for v in cells.values() if v & (1 << BAD_BIT)),
             'urbanCells': len(urban_cells),
+            'coastCells': len(coast_cells),
             'passes': len(passes),
             'towns': len(town_list),
         },
@@ -312,6 +419,7 @@ def main() -> None:
         'towns': town_list,
         'grid': base64.b64encode(grid).decode('ascii'),
         'urban': base64.b64encode(encode_keys(urban_cells)).decode('ascii'),
+        'coast': base64.b64encode(encode_keys(coast_cells)).decode('ascii'),
     }
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(json.dumps(dataset, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')

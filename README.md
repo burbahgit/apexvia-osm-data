@@ -12,7 +12,7 @@ Apexvia Android app, published here as required by the Open Database License.
 |---|---|
 | `assets/poi/tr-poi.json` | The dataset: 36,316 places (11,937 fuel stations, 10,839 places to stay, 13,540 cafés) |
 | `scripts/build-poi-dataset.mjs` | The script that produces the dataset |
-| `assets/roads/tr-roads.json` | Road grid: 1,709,151 cells of about 250 m with road class and poor surface, 133,060 built-up cells, and 237 mountain passes (OSM data as of 2026-11-01T21:21:36Z) |
+| `assets/roads/tr-roads.json` | Road grid: 1,709,287 cells of about 250 m with road class and poor surface, 133,115 built-up cells, 37,610 coastal cells (within 1 km of the sea) and 237 mountain passes (missing pass elevations filled from SRTM, public domain, NASA/USGS) (OSM data as of 2026-11-08T21:21:00Z) |
 | `scripts/roads/build_road_grid.py` | The script that produces the road grid |
 | `LICENSE-DATA.md` | Data licence (ODbL 1.0) |
 | `LICENSE` | Script licence (MIT) |
@@ -127,9 +127,9 @@ içinde gelen verinin birebir aynısıdır ve Açık Veritabanı Lisansı (ODbL)
 - `assets/poi/tr-poi.json`: veri dosyası. 36.316 yer (11.937 benzin istasyonu,
   10.839 konaklama, 13.540 kafe).
 - `scripts/build-poi-dataset.mjs`: dosyayı üreten betik.
-- `assets/roads/tr-roads.json`: yol ızgarası. Yaklaşık 250 m'lik 1.709.151 hücrede yol sınıfı ve
-  kötü yüzey, 133.060 yerleşim hücresi, ayrıca 237 dağ geçidi (OpenStreetMap
-  verisinin tarihi: 2026-11-01T21:21:36Z).
+- `assets/roads/tr-roads.json`: yol ızgarası. Yaklaşık 250 m'lik 1.709.287 hücrede yol sınıfı ve
+  kötü yüzey, 133.115 yerleşim hücresi, 37.610 sahil hücresi (denize 1 km içinde), ayrıca 237 dağ geçidi (OSM'de yüksekliği olmayan geçitlere SRTM yüksekliği; kamu malı, NASA/USGS) (OpenStreetMap
+  verisinin tarihi: 2026-11-08T21:21:00Z).
 - `scripts/roads/build_road_grid.py`: ızgarayı üreten betik.
 - `LICENSE-DATA.md`: veri lisansı (ODbL 1.0). `LICENSE`: betik lisansı (MIT).
 - Üretim zamanı: 2026-11-02T08:12:11.761Z. OpenStreetMap verisinin tarihi: 2026-11-02T08:08:43Z.
