@@ -14,6 +14,8 @@ Apexvia Android app, published here as required by the Open Database License.
 | `scripts/build-poi-dataset.mjs` | The script that produces the dataset |
 | `assets/roads/tr-roads.json` | Road grid: 1,709,287 cells of about 250 m with road class and poor surface, 133,115 built-up cells, 37,610 coastal cells (within 1 km of the sea) and 237 mountain passes (missing pass elevations filled from SRTM, public domain, NASA/USGS) (OSM data as of 2026-11-08T21:21:00Z) |
 | `scripts/roads/build_road_grid.py` | The script that produces the road grid |
+| `assets/roads/tr-border.json` | Turkey's border including territorial waters (OSM relation 174737), simplified to about 100 m; the app checks that a route does not cross into another country |
+| `scripts/roads/build_border.py` | The script that produces the border file |
 | `LICENSE-DATA.md` | Data licence (ODbL 1.0) |
 | `LICENSE` | Script licence (MIT) |
 
@@ -131,6 +133,9 @@ içinde gelen verinin birebir aynısıdır ve Açık Veritabanı Lisansı (ODbL)
   kötü yüzey, 133.115 yerleşim hücresi, 37.610 sahil hücresi (denize 1 km içinde), ayrıca 237 dağ geçidi (OSM'de yüksekliği olmayan geçitlere SRTM yüksekliği; kamu malı, NASA/USGS) (OpenStreetMap
   verisinin tarihi: 2026-11-08T21:21:00Z).
 - `scripts/roads/build_road_grid.py`: ızgarayı üreten betik.
+- `assets/roads/tr-border.json`: Türkiye sınırı, karasuları dahil (OSM ilişkisi 174737), ~100 m'ye sadeleştirilmiş; uygulama
+  rotanın başka bir ülkeye geçmediğini buradan denetler.
+- `scripts/roads/build_border.py`: sınır dosyasını üreten betik.
 - `LICENSE-DATA.md`: veri lisansı (ODbL 1.0). `LICENSE`: betik lisansı (MIT).
 - Üretim zamanı: 2026-11-02T08:12:11.761Z. OpenStreetMap verisinin tarihi: 2026-11-02T08:08:43Z.
 
