@@ -77,6 +77,10 @@ MIN_CELLS = 1_200_000
 MIN_PASSES = 100
 MIN_TOWNS = 500
 MIN_COAST_CELLS = 20_000
+# T-331 (D-36): bu uzunluktan uzun tüneller (sınıflı yol + `tunnel=yes`) çizgi olarak yazılır. Uygulama tünel içindeki rota
+# örneklerini geçide yakın saymaz ve tünel içi yüksekliği iki ağız arasında doğrusal alır (Elevation API dağ yüzeyini verir).
+TUNNEL_MIN_METERS = 300
+MIN_TUNNELS = 50
 COAST_METERS = 1000
 TOWN_PLACES = {'city', 'town'}
 
@@ -146,6 +150,10 @@ class Collector(osmium.SimpleHandler):
         self.residential: dict[tuple[int, int], float] = {}
         # T-316 U-3: kıyı çizgisi noktaları, ~100 m'de bir (hücre 250 m).
         self.coast_points: list[tuple[float, float]] = []
+        # T-331: uzun tüneller, düğüm noktalarıyla.
+        self.tunnels: list[list[tuple[float, float]]] = []
+        # CR-1: tünel yolları (ilk düğüm, son düğüm, noktalar); OSM bir tüneli şerit/hız/ad değişiminde bölebilir.
+        self.tunnel_ways: list[tuple[int, int, list[tuple[float, float]]]] = []
 
     def way(self, w):
         if w.tags.get('natural') == 'coastline':
@@ -170,11 +178,36 @@ class Collector(osmium.SimpleHandler):
         except osmium.InvalidLocationError:
             return
         self.ways += 1
+        if w.tags.get('tunnel') == 'yes' and len(points) >= 2:
+            self.tunnel_ways.append((w.nodes[0].ref, w.nodes[-1].ref, points))
         cells = self.cells
         cells_along(points, lambda key: cells.__setitem__(key, cells.get(key, 0) | value))
         if bad:
             bad_classes = self.bad_classes
             cells_along(points, lambda key: bad_classes.__setitem__(key, bad_classes.get(key, 0) | value))
+
+    def finish_tunnels(self) -> None:
+        """CR-1: uç düğümü ortak tünel parçaları tek tünel sayılır; 300 m sınırı toplam uzunluğa uygulanır, parçalar ayrı çizgi kalır."""
+        parent = list(range(len(self.tunnel_ways)))
+
+        def find(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        by_node: dict[int, int] = {}
+        for i, (first, last, _points) in enumerate(self.tunnel_ways):
+            for node in (first, last):
+                if node in by_node:
+                    parent[find(i)] = find(by_node[node])
+                else:
+                    by_node[node] = i
+        lengths: dict[int, float] = {}
+        for i, (_first, _last, points) in enumerate(self.tunnel_ways):
+            root = find(i)
+            lengths[root] = lengths.get(root, 0.0) + sum(haversine(a, b) for a, b in zip(points, points[1:]))
+        self.tunnels = [points for i, (_f, _l, points) in enumerate(self.tunnel_ways) if lengths[find(i)] >= TUNNEL_MIN_METERS]
 
     def final_cells(self) -> dict[tuple[int, int], int]:
         """Hücre değerleri; kötü yüzey biti yalnız en yüksek sınıf (en küçük bit) kötü etiketliyse (T-167)."""
@@ -330,6 +363,22 @@ def towns(pbf: Path) -> list[list]:
     return [list(town) for town in sorted(found)]
 
 
+def encode_polyline(points: list[tuple[float, float]]) -> str:
+    """Google kodlanmış çizgi (1e5); uygulama `decodePolyline` ile okur."""
+    out = []
+    prev_lat = prev_lon = 0
+    for lat, lon in points:
+        ilat, ilon = round(lat * 1e5), round(lon * 1e5)
+        for delta in (ilat - prev_lat, ilon - prev_lon):
+            value = ~(delta << 1) if delta < 0 else delta << 1
+            while value >= 0x20:
+                out.append(chr((0x20 | (value & 0x1f)) + 63))
+                value >>= 5
+            out.append(chr(value + 63))
+        prev_lat, prev_lon = ilat, ilon
+    return ''.join(out)
+
+
 def varint(n: int, out: bytearray) -> None:
     while True:
         byte = n & 0x7F
@@ -389,14 +438,15 @@ def main() -> None:
 
     collector = Collector()
     collector.apply_file(str(pbf), locations=True, idx='sparse_mem_array')
+    collector.finish_tunnels()
     urban_cells = collector.urban_cells()
     coast_cells = collector.coast_cells()
     passes = mountain_passes(pbf)
     town_list = towns(pbf)
     if (len(collector.cells) < MIN_CELLS or len(passes) < MIN_PASSES or len(town_list) < MIN_TOWNS
-            or len(coast_cells) < MIN_COAST_CELLS):
+            or len(coast_cells) < MIN_COAST_CELLS or len(collector.tunnels) < MIN_TUNNELS):
         sys.exit(f'Beklenenden az veri: {len(collector.cells)} hücre, {len(passes)} geçit, {len(town_list)} kasaba, '
-                 f'{len(coast_cells)} sahil hücresi.')
+                 f'{len(coast_cells)} sahil hücresi, {len(collector.tunnels)} tünel.')
 
     cells = collector.final_cells()
     grid = encode(cells)
@@ -414,9 +464,12 @@ def main() -> None:
             'coastCells': len(coast_cells),
             'passes': len(passes),
             'towns': len(town_list),
+            'tunnels': len(collector.tunnels),
         },
         'passes': passes,
         'towns': town_list,
+        # T-331: uzun tüneller, kodlanmış çizgi (Google polyline, 1e5).
+        'tunnels': [encode_polyline(points) for points in collector.tunnels],
         'grid': base64.b64encode(grid).decode('ascii'),
         'urban': base64.b64encode(encode_keys(urban_cells)).decode('ascii'),
         'coast': base64.b64encode(encode_keys(coast_cells)).decode('ascii'),
